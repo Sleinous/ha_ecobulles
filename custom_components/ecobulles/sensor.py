@@ -196,18 +196,6 @@ class EcobullesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         return self._co2_usage_state
 
-    async def async_reset_co2_usage(self) -> None:
-        """Reset the bottle estimate to the current API counter reading."""
-        if self.data is None:
-            return
-        raw_total_ms = self.data.get("total_gas")
-        if raw_total_ms is None:
-            return
-        co2_state = await self._load_co2_usage_state()
-        co2_state.reset_for_new_bottle(raw_total_ms)
-        await self._co2_store.async_save(co2_state.as_dict())
-        self.async_set_updated_data({**self.data, "total_gas_cumulative": 0})
-
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch Ecobulles data and update cumulative water and CO2 accounting."""
         try:

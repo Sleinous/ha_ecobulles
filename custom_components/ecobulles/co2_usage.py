@@ -30,14 +30,6 @@ class CO2UsageState:
         self.last_raw_ms = raw_total_ms
         return self.offset_ms + max(0, raw_total_ms - self.baseline_ms)
 
-    def reset_for_new_bottle(self, raw_total_ms: int | None) -> None:
-        """Start a new estimate from the current raw counter reading."""
-        self.offset_ms = 0
-        self.baseline_ms = max(0, int(raw_total_ms or 0))
-        self.last_raw_ms = (
-            None if raw_total_ms is None else max(0, int(raw_total_ms))
-        )
-
     def as_dict(self) -> dict[str, int | None]:
         """Serialize counter state for Home Assistant storage."""
         return {

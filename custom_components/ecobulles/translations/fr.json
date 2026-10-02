@@ -141,11 +141,6 @@
       "raw_co2_debug": {
         "name": "Debug CO2 brut"
       }
-    },
-    "button": {
-      "reset_co2_bottle_usage": {
-        "name": "Réinitialiser l’estimation d’utilisation de la bouteille de CO₂"
-      }
     }
   },
   "issues": {
