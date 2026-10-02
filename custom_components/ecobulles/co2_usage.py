@@ -50,12 +50,11 @@ class CO2UsageState:
     def from_dict(cls, raw: dict[str, int | None] | None) -> "CO2UsageState":
         """Restore counter state from Home Assistant storage."""
         raw = raw or {}
+        last_raw_ms = raw.get("last_raw_ms")
         return cls(
             offset_ms=max(0, int(raw.get("offset_ms", 0) or 0)),
             baseline_ms=max(0, int(raw.get("baseline_ms", 0) or 0)),
             last_raw_ms=(
-                None
-                if raw.get("last_raw_ms") is None
-                else max(0, int(raw["last_raw_ms"]))
+                None if last_raw_ms is None else max(0, int(last_raw_ms))
             ),
         )

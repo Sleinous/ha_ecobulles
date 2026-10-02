@@ -431,7 +431,7 @@ class CO2InjectionTimeSensor(EcobullesBaseSensor):
     @property
     def native_value(self) -> float | None:
         """Return cumulative CO2 valve-open time in seconds."""
-        total_gas = self.coordinator.data.get("total_gas_cumulative")
+        total_gas = self.coordinator.data.get("total_gas_cumulative", self.coordinator.data.get("total_gas"))
         if total_gas is None:
             return None
         return round(int(total_gas) / 1000, 3)
@@ -471,7 +471,7 @@ class EstimatedCO2BottleUsageSensor(EcobullesBaseSensor):
     @property
     def native_value(self) -> float | None:
         """Return estimated bottle usage percentage."""
-        total_gas = self.coordinator.data.get("total_gas_cumulative")
+        total_gas = self.coordinator.data.get("total_gas_cumulative", self.coordinator.data.get("total_gas"))
         flow_rate = self._estimated_flow_rate_g_per_min
         bottle_weight_kg = _float_config_value(
             self.config, CONF_CO2_BOTTLE_WEIGHT_KG, 10
@@ -518,7 +518,7 @@ class EstimatedCO2BottleUsageSensor(EcobullesBaseSensor):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Expose the assumptions used by the estimate."""
-        total_gas = self.coordinator.data.get("total_gas_cumulative") or 0
+        total_gas = self.coordinator.data.get("total_gas_cumulative", self.coordinator.data.get("total_gas")) or 0
         flow_rate = self._estimated_flow_rate_g_per_min
         open_minutes = int(total_gas) / 1000 / 60
         return {
