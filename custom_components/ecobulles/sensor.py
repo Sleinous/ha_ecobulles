@@ -41,6 +41,7 @@ from .const import (
     CONF_POLL_INTERVAL_SECONDS,
     DOMAIN,
 )
+from .co2_usage import CO2UsageState
 from .water_usage import WaterUsageState
 
 _LOGGER = logging.getLogger(__name__)
@@ -168,7 +169,11 @@ class EcobullesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.eco_ref = eco_ref
         self.config = config
         self._store = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{eco_ref}.water_usage")
+        self._co2_store = Store(
+            hass, STORAGE_VERSION, f"{DOMAIN}.{eco_ref}.co2_usage"
+        )
         self._water_usage_state: WaterUsageState | None = None
+        self._co2_usage_state: CO2UsageState | None = None
         poll_interval_seconds = int(config.get(CONF_POLL_INTERVAL_SECONDS, 120) or 120)
         super().__init__(
             hass,
@@ -183,8 +188,28 @@ class EcobullesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._water_usage_state = WaterUsageState.from_dict(await self._store.async_load())
         return self._water_usage_state
 
+    async def _load_co2_usage_state(self) -> CO2UsageState:
+        """Load durable CO2 counter accounting once."""
+        if self._co2_usage_state is None:
+            self._co2_usage_state = CO2UsageState.from_dict(
+                await self._co2_store.async_load()
+            )
+        return self._co2_usage_state
+
+    async def async_reset_co2_usage(self) -> None:
+        """Reset the bottle estimate to the current API counter reading."""
+        if self.data is None:
+            return
+        raw_total_ms = self.data.get("total_gas")
+        if raw_total_ms is None:
+            return
+        co2_state = await self._load_co2_usage_state()
+        co2_state.reset_for_new_bottle(raw_total_ms)
+        await self._co2_store.async_save(co2_state.as_dict())
+        self.async_set_updated_data({**self.data, "total_gas_cumulative": 0})
+
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch Ecobulles data and update cumulative water accounting."""
+        """Fetch Ecobulles data and update cumulative water and CO2 accounting."""
         try:
             async with async_timeout.timeout(15):
                 usage, device = await asyncio.gather(
@@ -224,6 +249,9 @@ class EcobullesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         water_state = await self._load_water_usage_state()
         bottle_changed = water_state.apply_cycle_value(usage["total_eau"])
         await self._store.async_save(water_state.as_dict())
+        co2_state = await self._load_co2_usage_state()
+        total_co2_ms = co2_state.apply(usage.get("total_gas"))
+        await self._co2_store.async_save(co2_state.as_dict())
 
         if bottle_changed:
             _LOGGER.info(
@@ -234,6 +262,7 @@ class EcobullesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return {
             **usage,
+            "total_gas_cumulative": total_co2_ms,
             **water_state.as_dict(),
             "total_water_liters": water_state.total_water_liters,
             "bottle_changed": bottle_changed,
@@ -402,7 +431,7 @@ class CO2InjectionTimeSensor(EcobullesBaseSensor):
     @property
     def native_value(self) -> float | None:
         """Return cumulative CO2 valve-open time in seconds."""
-        total_gas = self.coordinator.data.get("total_gas")
+        total_gas = self.coordinator.data.get("total_gas_cumulative")
         if total_gas is None:
             return None
         return round(int(total_gas) / 1000, 3)
@@ -413,7 +442,12 @@ class CO2InjectionTimeSensor(EcobullesBaseSensor):
         return {
             **super().extra_state_attributes,
             "raw_total_gas_ms": self.coordinator.data.get("total_gas"),
-            "interpretation": "cumulative CO2 electrovalve open time",
+            "corrected_total_gas_ms": self.coordinator.data.get(
+                "total_gas_cumulative"
+            ),
+            "interpretation": (
+                "cumulative CO2 electrovalve open time, corrected for counter resets"
+            ),
         }
 
 
@@ -437,7 +471,7 @@ class EstimatedCO2BottleUsageSensor(EcobullesBaseSensor):
     @property
     def native_value(self) -> float | None:
         """Return estimated bottle usage percentage."""
-        total_gas = self.coordinator.data.get("total_gas")
+        total_gas = self.coordinator.data.get("total_gas_cumulative")
         flow_rate = self._estimated_flow_rate_g_per_min
         bottle_weight_kg = _float_config_value(
             self.config, CONF_CO2_BOTTLE_WEIGHT_KG, 10
@@ -484,7 +518,7 @@ class EstimatedCO2BottleUsageSensor(EcobullesBaseSensor):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Expose the assumptions used by the estimate."""
-        total_gas = self.coordinator.data.get("total_gas") or 0
+        total_gas = self.coordinator.data.get("total_gas_cumulative") or 0
         flow_rate = self._estimated_flow_rate_g_per_min
         open_minutes = int(total_gas) / 1000 / 60
         return {
